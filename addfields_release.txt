@@ -1,0 +1,165 @@
+// Programa   : ADDFIELDS_RELEASE 
+// Fecha/Hora : 07/11/2019 05:15:25
+// Propósito  : Ejecuta las Mejoras en Cada Release
+// Creado Por : Juan Navas
+// Llamado por:
+// Aplicación :
+// Tabla      :
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN(lReset,lAsk,lDown)
+  LOCAL x     :=EJECUTAR("DPLOADCNFCHKFCH")
+  LOCAL cId   :=oDp:cBdRelease
+  LOCAL cFile :="add\release_"+cId+"_"+oDp:cDsnData+".ADD"
+  LOCAL oDb   :=OpenOdbc(oDp:cDsnData)
+  LOCAL cWhere 
+ 
+  DEFAULT oDp:lConfig:=.F.,;
+          lAsk       :=.F.,;
+          lDown      :=.F.
+
+  DEFAULT lReset:=.F.
+
+  lmkdir("ADD")
+
+  IF oDp:cType="NOM"
+     EJECUTAR("NMADDFIELDS_RELEASE",lReset,lAsk,lDown)
+     RETURN .F.
+  ENDIF
+
+  IF lAsk .AND. lReset .AND. !MsgNoYes("Desea Ejecutar la Actualización del Release")
+    RETURN .T.
+  ENDIF
+
+  IF lReset
+    FERASE(cFile)
+  ENDIF
+
+  IF oDp:lConfig
+     RETURN .T.
+  ENDIF
+
+  IF ISPCPRG()
+     EJECUTAR("MSGTEMPERR",.T.)
+     AEVAL(DIRECTORY("TEMP\*.ERR"),{|a,n| FERASE("TEMP\"+a[1])})
+  ENDIF
+
+//  ? FILE("DATADBF\DPTABLAS.DBF"),FILE(cFile),lDown,[FILE("DATADBF\DPTABLAS.DBF"),FILE(cFile),lDown]
+
+//IF FILE("DATADBF\DPTABLAS.DBF") .AND. FILE(cFile) .AND. !lDown
+  IF FILE(cFile) 
+//.AND. !lDown
+     RETURN .T.
+  ENDIF
+
+  // no tiene diccionario de datos
+  // IF !lReset .AND. !FILE("DATADBF\DPTABLAS.DBF")
+  //   RETURN .F.
+  // ENDIF
+  
+  RELEASEDATASET()
+
+  IF lReset
+    SQLDELETE("dpdataset",[DAT_GROUP LIKE "ADDFIELD%"])
+    SQLDELETE("dpdataset",[DAT_GROUP LIKE "ADDVIEW%"])
+    AEVAL(DIRECTORY("*.ADD"),{|a,n| FERASE(a[1])})
+    AEVAL(DIRECTORY("ADD\*.ADD"),{|a,n| FERASE("ADD\"+a[1])})
+  ENDIF
+
+//  oDb:EXECUTE("set session wait_timeout=300")
+
+  RELEASEDATASET()
+
+  oDp:lAllRelease:=.F.  // Debe Ejecutar todos los Release
+
+  oDp:lChkFieldLogical:=GETINI("DATAPRO.INI","CHKLOGICAL")   // Indica si MySQL Arranca emitiendo mensaje nativos de la clase TMYSQL
+  oDp:lChkFieldLogical:=IF(ValType(oDp:lChkFieldLogical)="L",oDp:lChkFieldLogical,.F.)
+
+  IF oDp:lChkFieldLogical
+    oFrm:=MSGRUNVIEW("Evaluando Campos Lógicos")
+    EJECUTAR("CHKLOGICOS",.F.)
+  ENDIF
+
+  EJECUTAR("INIADDFIELDS_1909") // Crear campos en el Diccionario de Datos
+
+//  oDp:cFileToScr:="TRAZA\TRAZAPLUGIN.TXT"
+
+  EJECUTAR("ADDFIELDS_1900") // Crear campos del nuevo release 19.09
+  EJECUTAR("ADDFIELDS_1909") // Crear campos del nuevo release 19.09
+  EJECUTAR("ADDFIELDS_1910") // Crear campos del nuevo release 19.10
+  EJECUTAR("ADDFIELDS_1911") // Crear campos del nuevo release 19.11
+  EJECUTAR("ADDFIELDS_2001") // Crear campos del nuevo release 20.01
+  EJECUTAR("ADDFIELDS_2002") // Crear campos del nuevo release 20.02
+  EJECUTAR("ADDFIELDS_2003") // Crear campos del nuevo release 20.03
+  EJECUTAR("ADDFIELDS_2004") // Crear campos del nuevo release 20.04
+  EJECUTAR("ADDFIELDS_2005") // Crear campos del nuevo release 20.05
+  EJECUTAR("ADDFIELDS_2006") // Crear campos del nuevo release 20.06
+  EJECUTAR("ADDFIELDS_2007") // Crear campos del nuevo release 20.07
+  EJECUTAR("ADDFIELDS_2008") // Crear campos del nuevo release 20.08
+  EJECUTAR("ADDFIELDS_2009") // Crear campos del nuevo release 20.09
+  EJECUTAR("ADDFIELDS_2010") // Crear campos del nuevo release 20.10
+  EJECUTAR("ADDFIELDS_2011") // Crear campos del nuevo release 20.11
+  EJECUTAR("ADDFIELDS_2012") // Crear campos del nuevo release 20.12
+  EJECUTAR("ADDFIELDS_2101") // Crear campos del nuevo release 21.01
+  EJECUTAR("ADDFIELDS_2102") // Crear campos del nuevo release 21.02
+  EJECUTAR("ADDFIELDS_2103") // Crear campos del nuevo release 21.03
+  EJECUTAR("ADDFIELDS_2104") // Crear campos del nuevo release 21.04
+  EJECUTAR("ADDFIELDS_2105") // Crear campos del nuevo release 21.05
+  EJECUTAR("ADDFIELDS_2106") // Crear campos del nuevo release 21.06
+  EJECUTAR("ADDFIELDS_2107") // Crear campos del nuevo release 21.07
+  EJECUTAR("ADDFIELDS_2108") // Crear campos del nuevo release 21.08
+  EJECUTAR("ADDFIELDS_2109") // Crear campos del nuevo release 21.09
+  EJECUTAR("ADDFIELDS_2110") // Crear campos del nuevo release 21.10
+  EJECUTAR("ADDFIELDS_2111") // Crear campos del nuevo release 21.11
+  EJECUTAR("ADDFIELDS_2112") // Crear campos del nuevo release 21.12
+  EJECUTAR("ADDFIELDS_2201") // Crear campos del nuevo release 22.01
+  EJECUTAR("ADDFIELDS_2202") // Crear campos del nuevo release 22.02
+  EJECUTAR("ADDFIELDS_2203") // Crear campos del nuevo release 22.03 
+  EJECUTAR("ADDFIELDS_2204") // Crear campos del nuevo release 22.04  
+  EJECUTAR("ADDFIELDS_2205") // Crear campos del nuevo release 22.05  
+  EJECUTAR("ADDFIELDS_2206") // Crear campos del nuevo release 22.06  
+  EJECUTAR("ADDFIELDS_2207") // Crear campos del nuevo release 22.07 
+  EJECUTAR("ADDFIELDS_2208") // Crear campos del nuevo release 22.08  
+  EJECUTAR("ADDFIELDS_2209") // Crear campos del nuevo release 22.09
+  EJECUTAR("ADDFIELDS_2210") // Crear campos del nuevo release 22.10
+  EJECUTAR("ADDFIELDS_2211") // Crear campos del nuevo release 22.11
+  EJECUTAR("ADDFIELDS_2212",NIL,ISPCPRG()) // Crear campos del nuevo release 22.12
+
+  // Revisa las Vistas
+  EJECUTAR("DPLOADCNFADDVIEW",.T.)
+  EJECUTAR("SETTRIGGERS") // Crear Disparadores
+  EJECUTAR("CREATEFUNCION")
+
+  cWhere:="OPC_TABLE"+GetWhere("=","DPCLIENTES")+" AND OPC_CAMPO"+GetWhere("=","CLI_TIPPER")+" AND OPC_TITULO"+GetWhere("=","Jurídica")
+
+  IF !ISSQLFIND("DPCAMPOSOP",cWhere)
+     EJECUTAR("DPCAMPOSOPCSETCOLOR")
+  ENDIF
+
+  // Descuento FIJO
+  cWhere:="OPC_TABLE"+GetWhere("=","DPCLIENTES")+" AND OPC_CAMPO"+GetWhere("=","CLI_DESFIC")
+  IF !ISSQLFIND("DPCAMPOSOP",cWhere)
+     EJECUTAR("DPCAMPOSOPCSETCOLOR")
+  ENDIF
+
+  IF oDp:cType="SGE"
+    EJECUTAR("DPTIPIVATOVISTA")
+    EJECUTAR("DPINDEXOPTMZ")
+  ENDIF
+
+  EJECUTAR("NMADDFIELDS_RELEASE")
+  EJECUTAR("SETTABLEPRIMARY")
+  EJECUTAR("UNIQUETABLAS","DPMENU","MNU_CODIGO")
+
+  DPWRITE(cFile,cFile)
+
+  IF ISPCPRG()
+     EJECUTAR("MSGTEMPERR",.T.)
+  ENDIF
+
+  DpMsgClose()
+
+RETURN NIL
+// EOF
+

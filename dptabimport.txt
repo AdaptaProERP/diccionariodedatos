@@ -1,0 +1,910 @@
+// Programa   : DPTABIMPORT
+// Fecha/Hora : 06/09/2004 16:18:52
+// Propósito  : Importar Tablas 
+// Creado Por : Juan Navas
+// Llamado por: DPMENU	 
+// Aplicación : Todas
+// Tabla      : DPTABLAS
+// Se agrego 90 caracteres para la busqueda de direccion a buscar los archivos (TJ)
+
+#INCLUDE "DPXBASE.CH"
+
+PROCE MAIN()
+
+  LOCAL oGrp
+
+  DEFAULT oDp:lConfig:=.F.
+
+/*
+  IF !EJECUTAR("DPMDICANT")
+     RETURN .F.
+  ENDIF
+*/
+   // Requiere DPTABLAS con 20 Caracteres
+  EJECUTAR("SETFIELDLONG","DPCAMPOS"  ,"CAM_NAME"  ,20)
+  EJECUTAR("SETFIELDLONG","DPTABLAS"  ,"TAB_CHKSUM",10)
+  EJECUTAR("SETFIELDLONG","DPCAMPOSOP","OPC_CAMPO" ,20) 
+
+  EJECUTAR("DPCAMPOSOPCADD","DPTABLAS","TAB_DSN","<MULTIPLE>"    ,.T.,CLR_BLUE   ,.T.)
+  EJECUTAR("DPCAMPOSOPCADD","DPTABLAS","TAB_DSN",".CONFIGURACION",.T.,39680      ,.T.)
+
+  // Revisa si los Campos de DPTABLAS son Lógicos
+  EJECUTAR("CHKDPTABLAS")
+
+  DPEDIT():New("Importar Tablas y Estructuras","DPTABIMP.EDT","oImpCon",.T.)
+ 
+  oImpCon:nOrigen:=1
+  oImpCon:cDir   :=PADR(cFilePath( GetModuleFileName( GetInstance() ))+"DATADBF\",90)
+  oImpCon:oCdir  :=NIL
+
+  @ 2,1 GROUP oGrp TO 4, 21.5 PROMPT "Origen"
+  @ 4,1 GROUP oGrp TO 6, 21.5 PROMPT "Ruta"
+
+  @ 4,  9 RADIO oImpCon:nOrigen PROMPT "&Instalados", "&Exportados";
+          ON CHANGE oImpCon:ONCHANGE(oImpCon)
+
+  @ 1,1 BMPGET oImpCon:oCdir VAR oImpCon:cDir NAME "BITMAPS\FOLDER5.BMP";
+                          ACTION (cDir:=cGetDir(oImpCon:cDir),;
+                          IIF(!EMPTY(cDir),oImpCon:PUTVAR("cDir",PADR(cDir,90)),NIL),DPFOCUS(oImpCon:OcDir))
+
+//  @ 6,07 BUTTON "Iniciar " ACTION  oImpCon:ConImport(oImpCon)
+//  @ 6,10 BUTTON "Cerrar  " ACTION  oImpCon:Close() CANCEL
+
+  oImpCon:Activate({||oImpCon:INICIO()})
+
+Return nil
+
+
+FUNCTION INICIO()
+   LOCAL oCursor,oBar,oBtn,oFont,oCol
+   LOCAL oDlg:=oImpCon:oDlg
+   LOCAL nLin:=0
+
+   DEFINE CURSOR oCursor HAND
+   DEFINE BUTTONBAR oBar SIZE 52-15,60-15 OF oDlg 3D CURSOR oCursor
+   DEFINE FONT oFont  NAME "Tahoma"   SIZE 0, -14 BOLD
+
+
+   DEFINE BUTTON oBtn;
+            OF oBar;
+            NOBORDER;
+            FONT oFont;
+            FILENAME "BITMAPS\RUN.BMP",NIL,"BITMAPS\XRUN.BMP";
+            ACTION oImpCon:ConImport(oImpCon)
+
+     oBtn:cToolTip:="Guardar"
+
+     oImpCon:oBtnSave:=oBtn
+
+
+     DEFINE BUTTON oBtn;
+            OF oBar;
+            NOBORDER;
+            FONT oFont;
+            FILENAME "BITMAPS\DOWNLOAD.BMP";
+            ACTION oImpCon:DICCDOWNLOAD()
+
+     oBtn:cToolTip:="Descar Diccionario desde AdaptaPro Server"
+
+     DEFINE BUTTON oBtn;
+            OF oBar;
+            NOBORDER;
+            FONT oFont;
+            FILENAME "BITMAPS\XSALIR.BMP";
+            ACTION (oImpCon:Close()) CANCEL
+
+   
+   oBar:SetColor(CLR_BLACK,oDp:nGris)
+
+   AEVAL(oBar:aControls,{|o,n| o:SetColor(CLR_BLACK,oDp:nGris) })
+
+ 
+RETURN .T.
+
+
+
+
+/*
+// Realiza 
+*/
+FUNCTION ONCHANGE(oImpCon)
+   LOCAL cDir:=""
+   LOCAL oData
+
+   IF !oImpCon:lActivated
+      RETURN .F.
+   ENDIF
+
+   IF oImpCon:nOrigen=1
+
+     cDir   :=CURDRIVE()+":\"+CURDIR()+PADR("\datadbf\",90)
+
+   ELSE
+
+     // Grabar DataSet
+     oData:=DATASET("PRGEXPORT","PC")
+     cDir :=STRTRAN(PADR(oData:Get("CPATH","C:"),90),"\\","\")
+     oData:End()
+
+   ENDIF
+
+   IF ValType(oImpCon)="O" 
+      oImpCon:oCdir:VarPut(cDir,.T.)
+   ENDIF
+
+RETURN .T.
+
+/*
+// Presenta la selección de Conceptos
+*/
+FUNCTION CONIMPORT(oImpCon)
+  LOCAL cFile,cDir
+  LOCAL nFieldPos:=0
+  LOCAL aData:={} // Todo el Archivo
+  LOCAL aView:={} // Visualizar
+  LOCAL oDlg,oFont,oFontB,oBrw,oCol,I
+
+  cDir :=ALLTRIM(oImpCon:cDir)
+  cDir :=cDir+IIF(RIGHT(cDir,1)="\","","\")
+  cFile:=cDir+"DPTABLAS.dbf"
+
+  IF !FILE(cFile) 
+     MensajeErr(cFile,"Archivo no Existe")
+     RETURN .F.
+  ENDIF
+
+  CursorWait()
+
+  IF DPSELECT("DPTABLAS")
+    USE
+  ENDIF
+
+  SELE A
+  USE (cFile) VIA "DBFCDX" ALIAS "DPTABLAS" EXCLU
+
+  DELETE FOR LEFT(TAB_NOMBRE,5)="VIEW_"
+  REPLACE ALL TAB_DSN WITH ".CONFIGURACION" FOR UPPER(TAB_DSN)="ADMCONFIG51" 
+
+  USE
+  SELE A
+  USE (cFile) VIA "DBFCDX" ALIAS "DPTABLAS" SHARED
+
+  GO TOP
+
+  MsgMeter( { | oMeter, oText, oDlg, lEnd | ;
+               TABLEE(cFile,oDlg,oText,oMeter,@lEnd,@aData,@aView,@nFieldPos)  },;
+             "Leyendo Estructuras de Tablas", "Leyendo.."  )
+
+// ViewArray(aView)
+  ADEPURA(aData,{|a,n| Empty(a[2])})
+
+  FOR I=1 TO LEN(aData)
+
+//? I,aView[I,4],aView[I,5],aView[I,6],aView[I,7]
+
+    IF !aView[I,4] .AND. !aView[I,5] .AND. !aView[I,6]
+       aView[I,7]:=.F.
+    ENDIF
+
+
+  NEXT I
+
+  ASORT(aView,,, { |x, y| x[7] > y[7] })
+
+
+// ViewArray(aView)
+
+  SELE A
+  USE
+
+  oImpCon:Close()
+  oImpCon:=NIL
+
+  DEFINE FONT oFont  NAME "Tahoma"   SIZE 0, -11 BOLD
+  DEFINE FONT oFontB NAME "Tahoma"   SIZE 0, -11 BOLD
+
+//  DPEDIT():New("Importar Tablas y Esctructura","DPTABIMPORT.edt","oImp_Tab",.T.)
+
+  DpMdi("Importar Tablas y Esctructura","oImp_Tab","DPTABIMPORT.edt")
+
+  oImp_Tab:Windows(0,0,oDp:aCoors[3]-160,MIN(940,oDp:aCoors[4]-10),.T.) // Maximizado
+
+  oImp_Tab:aData    :=ACLONE(aData)
+  oImp_Tab:cFileDbf :=cFile
+  oImp_Tab:lReset   :=.F.
+
+  oImp_Tab:nClrPane1:=oDp:nClrPane1
+  oImp_Tab:nClrPane2:=oDp:nClrPane2
+
+  aData:=NIL
+
+  oDlg:=oImp_Tab:oWnd
+
+  oBrw:=TXBrowse():New( oImp_Tab:oDlg )
+
+//  oBrw:nMarqueeStyle       := MARQSTYLE_HIGHLCELL
+  oBrw:SetArray( aView, .F. )
+
+  oBrw:lHScroll            := .F.
+  oBrw:lFooter             := .F.
+  oBrw:oFont               :=oFont
+  oBrw:nHeaderLines        := 2
+
+  AEVAL(oBrw:aCols,{|oCol|oCol:oHeaderFont:=oFontB})
+
+  oImp_Tab:oBrw:=oBrw
+
+  oBrw:aCols[1]:cHeader:="Código"
+  oBrw:aCols[1]:nWidth :=160
+  oBrw:aCols[1]:bLClickHeader := {|r,c,f,o| SortArray( o, oImp_Tab:oBrw:aArrayData ) } 
+
+  oBrw:aCols[2]:cHeader  :="Descripción"
+  oBrw:aCols[2]:nWidth   :=300
+  oBrw:aCols[2]:bLClickHeader := {|r,c,f,o| SortArray( o, oImp_Tab:oBrw:aArrayData ) } 
+
+  oBrw:aCols[3]:cHeader  :="Dase de Datos"
+  oBrw:aCols[3]:bLClickHeader := {|r,c,f,o| SortArray( o, oImp_Tab:oBrw:aArrayData ) } 
+
+  oCol:=oBrw:aCols[3]
+  oCol:bClrStd  := {|nClrText,uValue|uValue:=oImp_Tab:oBrw:aArrayData[oImp_Tab:oBrw:nArrayAt,3],;
+                     nClrText:=COLOR_OPTIONS("DPTABLAS","TAB_DSN",uValue),;
+                     {nClrText,iif(oImp_Tab:oBrw:nArrayAt%2=0, oImp_Tab:nClrPane1, oImp_Tab:nClrPane2 ) } } 
+
+  oCol:=oBrw:aCols[4]
+  oCol:cHeader      := "Alterado"
+  oCol:nWidth       := 70
+  oCol:AddBmpFile("BITMAPS\xCheckOn.bmp")
+  oCol:AddBmpFile("BITMAPS\xCheckOff.bmp")
+  oCol:bBmpData    := {|oObj,oBrw|oBrw:=oImp_Tab:oBrw,IIF(oBrw:aArrayData[oBrw:nArrayAt,4],1,2) }
+  oCol:nDataStyle  := oCol:DefStyle( AL_LEFT, .F.)
+  oCol:bStrData    := { ||""}
+  oBrw:aCols[4]:bLClickHeader := {|r,c,f,o| SortArray( o, oImp_Tab:oBrw:aArrayData ) } 
+
+
+  oCol:=oBrw:aCols[5]
+  oCol:cHeader      := "Diferente"
+  oCol:nWidth       := 70
+  oCol:AddBmpFile("BITMAPS\xCheckOn.bmp")
+  oCol:AddBmpFile("BITMAPS\xCheckOff.bmp")
+  oCol:bBmpData    := {|oObj,oBrw|oBrw:=oImp_Tab:oBrw,IIF(oBrw:aArrayData[oBrw:nArrayAt,5],1,2) }
+  oCol:nDataStyle  := oCol:DefStyle( AL_LEFT, .F.)
+  oCol:bStrData    := { ||""}
+  oBrw:aCols[5]:bLClickHeader := {|r,c,f,o| SortArray( o, oImp_Tab:oBrw:aArrayData ) } 
+
+  oCol:=oBrw:aCols[6]
+  oCol:cHeader      := "Nuevo"
+  oCol:nWidth       := 70
+  oCol:AddBmpFile("BITMAPS\xCheckOn.bmp")
+  oCol:AddBmpFile("BITMAPS\xCheckOff.bmp")
+  oCol:bBmpData    := {|oObj,oBrw|oBrw:=oImp_Tab:oBrw,IIF(oBrw:aArrayData[oBrw:nArrayAt,6],1,2) }
+  oCol:nDataStyle  := oCol:DefStyle( AL_LEFT, .F.)
+  oCol:bStrData    := { ||""}
+  oBrw:aCols[6]:bLClickHeader := {|r,c,f,o| SortArray( o, oImp_Tab:oBrw:aArrayData ) } 
+
+
+  oCol:=oBrw:aCols[7]
+  oCol:cHeader      := "Importar"
+  oCol:nWidth       := 70
+//oCol:AddBmpFile("BITMAPS\xCheckOn.bmp")
+//oCol:AddBmpFile("BITMAPS\xCheckOff.bmp")
+  oCol:AddBmpFile("BITMAPS\checkverde.bmp")
+  oCol:AddBmpFile("BITMAPS\checkrojo.bmp")
+
+  oCol:bBmpData    := {|oObj,oBrw|oBrw:=oImp_Tab:oBrw,IIF(oBrw:aArrayData[oBrw:nArrayAt,7],1,2) }
+  oCol:nDataStyle  := oCol:DefStyle( AL_LEFT, .F.)
+  oCol:bStrData    := { ||""}
+
+
+  oCol:bLClickHeader:={|nRow,nCol,nKey,oCol|oImp_Tab:ChangeAllImp(oImp_Tab,nRow,nCol,nKey,oCol,.T.)}
+
+  AEVAL(oBrw:aCols,{|oCol,n|oCol:bLDClickData:={||oImp_Tab:ConSelect(oImp_Tab)}})
+
+  oBrw:bClrHeader:= {|| { oDp:nLbxClrHeaderText, oDp:nLbxClrHeaderPane}}
+  oBrw:bClrFooter:= {|| { oDp:nLbxClrHeaderText, oDp:nLbxClrHeaderPane}}
+
+
+  oBrw:bClrStd   :={|oBrw,cCod,nClrText|oBrw:=oImp_Tab:oBrw,;
+                               nClrText:=IIF(oBrw:aArrayData[oBrw:nArrayAt,7],CLR_BLACK,6250335),;
+                               {nClrText, iif( oBrw:nArrayAt%2=0, oDp:nClrPane1, oDp:nClrPane2 ) } }
+
+
+  oBrw:SetFont(oFont)
+
+  oBrw:CreateFromCode()
+
+  oImp_Tab:oWnd:oClient := oImp_Tab:oBrw
+
+  oImp_Tab:Activate({||oImp_Tab:FICHABAR()})
+
+//  STORE NIL TO oBrw,oDlg
+
+RETURN .T.
+
+/*
+// Coloca la Barra de Botones
+*/
+FUNCTION FICHABAR()
+   LOCAL oCursor,oBar,oBtn,oFont,oCol,nDif
+   LOCAL nWidth :=0 // Ancho Calculado seg£n Columnas
+   LOCAL nHeight:=0 // Alto
+   LOCAL nLines :=0 // Lineas
+   LOCAL oDlg:=oImp_Tab:oDlg
+   LOCAL nLin:=32
+
+   DEFINE CURSOR oCursor HAND
+   DEFINE BUTTONBAR oBar SIZE 52-15,60-15 OF oDlg 3D CURSOR oCursor
+
+   DEFINE FONT oFont  NAME "Tahoma"   SIZE 0, -14 BOLD
+
+
+   DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\RUN.BMP";
+          ACTION oImp_Tab:IMPORTCON(oImp_Tab,oImp_Tab:lReset)
+
+   oBtn:cToolTip:="Iniciar Importación de Conceptos"
+
+
+   DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\FILTRAR.BMP";
+          ACTION EJECUTAR("BRWSETFILTER",oImp_Tab:oBrw)
+
+   oBtn:cToolTip:="Filtrar Registros"
+
+
+   DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\XFIND.BMP";
+          ACTION EJECUTAR("BRWSETFIND",oImp_Tab:oBrw)
+
+   oBtn:cToolTip:="Solicitar Búsqueda"
+
+   DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\xTOP.BMP";
+          ACTION (oImp_Tab:oBrw:GoTop(),oImp_Tab:oBrw:Setfocus())
+
+   DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\xSIG.BMP";
+          ACTION (oImp_Tab:oBrw:PageDown(),oImp_Tab:oBrw:Setfocus())
+
+   DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\xANT.BMP";
+          ACTION (oImp_Tab:oBrw:PageUp(),oImp_Tab:oBrw:Setfocus())
+
+   DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER;
+          FONT oFont;
+          FILENAME "BITMAPS\xFIN.BMP";
+          ACTION (oImp_Tab:oBrw:GoBottom(),oImp_Tab:oBrw:Setfocus())
+
+   oBtn:cToolTip:="Grabar los Cambios"
+
+   DEFINE BUTTON oBtn;
+          OF oBar;
+          NOBORDER; 
+          FONT oFont;
+          FILENAME "BITMAPS\XSALIR.BMP";
+          ACTION oImp_Tab:Close()
+
+  oImp_Tab:oBrw:SetColor(0,oDp:nClrPane1)
+
+  oBar:SetColor(CLR_BLACK,oDp:nGris)
+  nLin:=0
+  AEVAL(oBar:aControls,{|o,n|o:SetColor(CLR_BLACK,oDp:nGris),;
+                             nLin:=nLin+o:nWidth() })
+
+  @ 5,nlin+30 CHECKBOX oImp_Tab:oReset VAR oImp_Tab:lReset  PROMPT ANSITOOEM("Remover Diccionario") OF oBar PIXEL SIZE 160,15;
+              ON CHANGE oImp_Tab:SELTODOS() FONT oFont
+
+RETURN .T.
+
+
+/*
+//
+*/
+FUNCTION SELTODOS()
+
+  IF oImp_Tab:lReset
+
+     AEVAL(oImp_Tab:oBrw:aArrayData,{|a,n| oImp_Tab:oBrw:aArrayData[n,7]:=.T.})
+     oImp_Tab:oBrw:Refresh(.F.)
+
+  ENDIF
+
+RETURN .T.
+
+/*
+// Presenta la selección de Conceptos
+*/
+FUNCTION TABLEE(cFile,oDlg,oText,oMeter,lEnd,aData,aView)
+   LOCAL oTable,lNew,lChange,lAlter,lImport
+   LOCAL aRecord:=ARRAY(FCOUNT())
+   LOCAL uValue1,uValue2
+
+   oDlg:SetColor(CLR_BLACK,oDp:nGris)
+   oDlg:Refresh(.T.)
+   oDlg:aControls[1]:SetColor(CLR_BLACK,oDp:nGris)
+
+   oMeter:SetTotal(RecCount())
+   GO TOP
+
+   WHILE !EOF()
+
+     oTable   :=OpenTable("SELECT * FROM DPTABLAS WHERE TAB_NOMBRE"+GetWhere("=",TAB_NOMBRE),.T.)
+     lNew     :=oTable:RecCount()=0
+     lAlter   :=oTable:TAB_ALTER
+     lChange  :=.F.
+
+     oMeter:Set(Recno())
+
+     IF oTable:FCOUNT()=FCOUNT()
+
+        AEVAL(aRecord,{|a,n,nAt,lIgual|nAt    :=oTable:FieldPos(FieldName(n)) ,;
+                                       uValue1:=ALLTRIM(CTOO(oTable:FieldGet(nAt),"C")),;
+                                       uValue1:=STRSQLOFF(uValue1)         ,;
+                                       uValue2:=ALLTRIM(CTOO(FieldGet(n),"C")),;
+                                       uValue1:=MEMOTRAN(uValue1)          ,;
+                                       uValue2:=MEMOTRAN(uValue2)          ,;
+                                       uValue1:=STRTRAN(uValue1,CRLF   ,""),;
+                                       uValue2:=STRTRAN(uValue2,CRLF   ,""),;
+                                       uValue1:=STRTRAN(uValue1,CHR(10),""),;
+                                       uValue2:=STRTRAN(uValue2,CHR(10),""),;
+                                       lIgual :=IIF(FIELDNAME(n)="TAB_ALTER",.T.,(uValue1==uValue2)),;
+                                       IIF(!lIgual,lChange:=.T.,NIL),;
+                                       aRecord[n]:=FieldGet(n)})
+
+          lAlter:=IIF(ValType(lAlter)<>"L",.F.,lAlter)
+
+     ELSE
+
+          lAlter :=.F.
+          lChange:=.F.
+          lIgual :=.F.
+
+     ENDIF
+
+     lImport:=!lAlter               // No debe Importar los Alterados
+     lImport:=IIF(lNew,.T.,lImport) // Los nuevos debe Importarlos
+
+     IF oImpCon:nOrigen=2 // Si vienen desde Diskette debe ser Importados
+        lImport:=.T.
+     ENDIF
+
+     AADD(aView,{TAB_NOMBRE,TAB_DESCRI,TAB_DSN,lAlter,lChange,lNew,lImport})
+     AADD(aData,aRecord)
+     lAlter :=.F.
+     lChange:=.F.
+     oTable:End()
+
+     SKIP
+
+   ENDDO
+
+   aView:= ASORT(aView,,, { |x, y| x[1] < y[1] }) // Ordena por Número
+
+// ViewArray(aView)
+
+
+RETURN .T.
+
+/*
+// Selecciona o Desmarca a Todos
+*/
+FUNCTION ChangeAllImp(oImp_Tab)
+   LOCAL oBrw:=oImp_Tab:oBrw
+   LOCAL lSelect:=!oBrw:aArrayData[1,7]
+
+   AEVAL(oBrw:aArrayData,{|a,n|oBrw:aArrayData[n,7]:=lSelect})
+   oBrw:Refresh(.T.)
+
+RETURN .T.
+/*
+// Seleccionar Concepto
+*/
+FUNCTION ConSelect(oFrmSelCon)
+  LOCAL oBrw:=oFrmSelCon:oBrw,oTable
+  LOCAL nArrayAt,nRowSel
+  LOCAL cCodCon,cCodCla,lSelect,cWhere
+  LOCAL nCol:=7
+  LOCAL lSelect
+
+  IF ValType(oBrw)!="O"
+     RETURN .F.
+  ENDIF
+
+  nArrayAt:=oBrw:nArrayAt
+  nRowSel :=oBrw:nRowSel
+  lSelect :=oBrw:aArrayData[nArrayAt,nCol]
+
+  oBrw:aArrayData[oBrw:nArrayAt,nCol]:=!lSelect
+  oBrw:RefreshCurrent()
+
+RETURN .T.
+
+/*
+// Importar Conceptos
+*/
+FUNCTION ImportCon(oFrmSelCon)
+  LOCAL aSelect   :={},cSql,I,oBrw:=oFrmSelCon:oBrw
+  LOCAL aTablas:={},cFile:=oImp_Tab:cFileDbf
+
+  FOR I=1 TO LEN(oBrw:aArrayData)
+    IF oBrw:aArrayData[i,7]
+       AADD(aTablas,oBrw:aArrayData[I,1])
+    ENDIF
+  NEXT I
+
+  oFrmSelCon:Close()
+
+  IF EMPTY(aTablas) 
+     MensajeErr("No hay Tablas Seleccionadas")
+     RETURN .F.
+  ENDIF
+
+  oEditRun:=DPEDIT():New("Importar ["+ALLTRIM(STR(LEN(aTablas),4,0))+"] Tablas(s) ","forms\IMPDPTAB.edt","oEditRun",.T.)
+
+  oEditRun:nCantid   :=LEN(aTablas)
+  oEditRun:aTablas:=ACLONE(aTablas)
+  oEditRun:nRecord   :=0
+  oEditRun:oMeter    :=NIL
+  oEditRun:cFileDbf  :=cFile
+
+  @ 03,02 SAY oEditRun:oSayRecord PROMPT "Registros: "
+
+  @ 02,01 METER oEditRun:oMeter VAR oEditRun:nRecord
+
+  @ 6,07 BUTTON oEditRun:oBtnRun   PROMPT "Iniciar " ACTION oEditRun:RUNIMPORT(oEditRun)
+  @ 6,10 BUTTON oEditRun:oBtnClose PROMPT "Cerrar  " ACTION (oEditRun:Close()) CANCEL
+
+  oEditRun:Activate(NIL)
+
+  aSelect:=NIL
+
+RETURN NIL
+
+/*
+// Ejecuta la Importación
+*/
+FUNCTION RUNIMPORT(oEditRun,lReset)
+   LOCAL nContar  :=0,aFields:={},oTable,oScript,I,oLink,oCamposOp
+   LOCAL cFile    :=oEditRun:cFileDbf,nUpdate:=0,nAppend:=0,oCampos,oTRIGGERS,aFieldsB,aFieldsC,aFieldsD,aFieldsE
+   LOCAL aTablas  :={},aDescri:={}
+   LOCAL cCampos  :=STRTRAN(cFile,"DPTABLAS","DPCAMPOS"  )
+   LOCAL cCamposOp:=STRTRAN(cFile,"DPTABLAS","DPCAMPOSOP")
+   LOCAL cLink    :=STRTRAN(cFile,"DPTABLAS","DPLINK"    )
+   LOCAL cTRIGGERS:=STRTRAN(cFile,"DPTABLAS","DPTRIGGERS") 
+
+   DEFAULT lReset:=.F.
+
+   IF lReset
+      SQLDELETE("DPCAMPOS")
+      SQLDELETE("DPCAMPOSOP")
+      SQLDELETE("DPTABLAS")
+      SQLDELETE("DPLINK")
+      SQLDELETE("DPTRIGGERS")
+   ENDIF
+                        
+
+   SELECT A
+   IIF(DPSELECT("DPTABLAS"),DBCLOSEAREA(),NIL)
+   USE (cFile) EXCLU VIA "DBFCDX" ALIAS "DPTABLAS" EXCLU
+   REPLACE ALL TAB_DSN WITH ".CONFIGURACION" FOR UPPER(TAB_DSN)="ADMCONFIG51" 
+
+// BROWSE()
+// READONLY
+   aFields:=Array(Fcount())
+
+   SELECT B
+   IIF(DPSELECT("DPCAMPOS"),DBCLOSEAREA(),NIL)
+   USE (cCampos) EXCLU VIA "DBFCDX" ALIAS "DPCAMPOS" READONLY
+   aFieldsB:=Array(Fcount())
+
+   SELECT C
+   IIF(DPSELECT("DPLINK"),DBCLOSEAREA(),NIL)
+   USE (cLink) EXCLU VIA "DBFCDX" ALIAS "DPLINK" READONLY
+   aFieldsC:=Array(Fcount())
+
+   SELECT D
+   IIF(DPSELECT("DPCAMPOSOP"),DBCLOSEAREA(),NIL)
+   USE (cCamposOp) EXCLU VIA "DBFCDX" ALIAS "DPCAMPOSOP" READONLY
+   aFieldsD:=Array(Fcount())
+
+   SELECT E
+   IIF(DPSELECT("DPTRIGGERS"),DBCLOSEAREA(),NIL)
+   USE (cTRIGGERS) EXCLU VIA "DBFCDX" ALIAS "DPTRIGGERS" READONLY
+   aFieldsE:=Array(Fcount())
+
+   SELECT A
+
+   GO TOP
+   oEditRun:oMeter:SetTotal(LEN(oEditRun:aTablas))
+
+   HRBLOAD("DPXBASE.HRB")
+
+
+   WHILE !EOF()
+
+      IF ASCAN(oEditRun:aTablas,TAB_NOMBRE)>0
+
+        AADD(aTablas,TAB_NOMBRE) // Estas Seran Reconfiguradas
+        AADD(aDescri,ALLTRIM(TAB_NOMBRE)+" "+ALLTRIM(TAB_DESCRI))
+
+        oEditRun:oSayRecord:SetText(TAB_NOMBRE+" "+TAB_DESCRI)
+        nContar++
+        oEditRun:oMeter:Set(nContar)
+        oTable:=OpenTable("SELECT * FROM DPTABLAS WHERE TAB_NOMBRE"+GetWhere("=",TAB_NOMBRE),.T.)
+
+        IF oTable:RecCount()=0
+           nAppend++
+           oTable:Append()
+        ELSE
+           nUpdate++
+        ENDIF
+
+        IF TYPE("TAB_CODADD")="U"
+           PUBLICO("TAB_CODADD","STD")
+        ENDIF
+
+        IF TYPE("TAB_CHKSUM")="U"
+           PUBLICO("TAB_CHKSUM",0)
+        ENDIF
+
+        IF COUNT("DPADDON","ADD_CODIGO"+GetWhere("=",TAB_CODADD))=0
+
+          EJECUTAR("CREATERECORD","DPADDON",{"ADD_CODIGO","ADD_DESCRI"   },; 
+                                            {TAB_CODADD    ,"Indefinido" },;
+                                  NIL,.T.,"ADD_CODIGO"+GetWhere("=",TAB_CODADD))
+
+        ENDIF
+
+        AEVAL(aFields,{|a,n,nAt|oTable:Replace(FieldName(n),FieldGet(n))})
+
+        // Asume el Dsn de la Configuración
+        IF (ValType(oTable:TAB_CONFIG)="L" .AND. oTable:TAB_CONFIG)
+//           JN 01/05/2014 puede causar CAMBIO de Diccionario de datos hacia configuración
+//           oTable:REPLACE("TAB_DSN",".CONFIGURACION")
+        ENDIF
+  
+        oTable:Commit(IIF(oTable:lAppend,"",oTable:cWhere))
+        oTable:End()
+
+        /*
+        // Revisión de Campos, Solo agrega en caso de existir nuevos campos
+        */
+
+        SELE B
+
+        SET FILTER TO CAM_TABLE=A->TAB_NOMBRE
+//      BROWSE()
+        GO TOP
+
+//      aFieldsB:=Array(Fcount())
+
+        WHILE !B->(EOF())
+
+           oCampos:=OpenTable("SELECT * FROM DPCAMPOS WHERE "+;
+                              "CAM_TABLE"+GetWhere("=",A->TAB_NOMBRE)+" AND "+;
+                              "CAM_NAME  "+GetWhere("=",B->CAM_NAME  ),.T.)
+
+           // IF oCampos:RecCount()=0 .OR. oCampos:CAM_LEN<B->CAM_LEN // Nuevo, Solo si la Estructura Cambia
+
+              IF oCampos:RecCount()=0
+                 oCampos:Append()
+              ENDIF
+
+              B->(AEVAL(aFieldsB,{|a,n,nAt|oCampos:Replace(FieldName(n),FieldGet(n))}))
+
+              oCampos:Commit(IIF(oCampos:lAppend,"",oCampos:cWhere))
+
+           // ENDIF
+
+           oCampos:End()
+
+           /*
+           // Opciones de los Campos
+           */
+
+           SELECT D
+           IF Empty(ALIAS())
+              SELECT D
+              IIF(DPSELECT("DPCAMPOSOP"),DBCLOSEAREA(),NIL)
+              USE (cCamposOp) EXCLU VIA "DBFCDX" ALIAS "DPCAMPOSOP" READONLY
+              aFieldsD:=Array(Fcount())
+           ENDIF
+
+           SET FILTER TO ALLTRIM(D->OPC_TABLE)=ALLTRIM(B->CAM_TABLE) .AND. ALLTRIM(D->OPC_CAMPO)=ALLTRIM(B->CAM_NAME)
+           GO TOP
+
+           WHILE !D->(EOF())
+
+              oCamposOp:=OpenTable("SELECT * FROM DPCAMPOSOP WHERE "+;
+                                   "OPC_TABLE" +GetWhere("=",B->CAM_TABLE )+" AND "+;
+                                   "OPC_CAMPO" +GetWhere("=",B->CAM_NAME  )+" AND "+;
+                                   "OPC_TITULO"+GetWhere("=",D->OPC_TITULO),.T.)
+
+              // IF oCamposOp:RecCount()=0 
+
+               
+                 IIF(oCamposOp:RecCount()=0,oCamposOp:Append(),NIL)
+
+                 D->(AEVAL(aFieldsD,{|a,n,nAt|oCamposOp:Replace(FieldName(n),FieldGet(n))}))
+                 oCamposOp:Commit(IIF(oCamposOp:lAppend,"",oCamposOp:cWhere))
+
+              //  ENDIF
+ 
+              oCamposOp:End()
+
+              D->(DBSKIP())
+
+           ENDDO
+
+           B->(DBSKIP())
+
+        ENDDO
+
+//      USE
+
+        /*
+        // Revisión de Relaciones Entre Campos
+        */
+
+        SELE C
+
+        SET FILTER TO ALLTRIM(LNK_TABLES)=ALLTRIM(A->TAB_NOMBRE)
+
+        GO TOP
+
+  //      aFieldsC:=Array(Fcount())
+
+        WHILE !C->(EOF())
+
+           oLink:=OpenTable("SELECT * FROM DPLINK WHERE "+;
+                            "LNK_TABLES"+GetWhere("=",C->LNK_TABLES)+" AND "+;
+                            "LNK_TABLED"+GetWhere("=",C->LNK_TABLED),.T.)
+
+           // IF oLink:RecCount()=0 
+
+              IIF(oLink:RecCount()=0,oLink:Append(),NIL)
+
+              C->(AEVAL(aFieldsC,{|a,n,nAt|oLink:Replace(FieldName(n),FieldGet(n))}))
+              oLink:Commit(IIF(oLink:lAppend,"",oLink:cWhere))
+
+
+           // ENDIF
+
+           oLink:End()
+
+           C->(DBSKIP())
+
+        ENDDO
+
+        /*
+        // DISPARADORES
+        */
+
+        SELECT E
+        IF Empty(ALIAS())
+           SELECT E
+           IIF(DPSELECT("DPTRIGGERS"),DBCLOSEAREA(),NIL)
+           USE (cTRIGGERS) EXCLU VIA "DBFCDX" ALIAS "DPTRIGGERS" READONLY
+           aFieldsE:=Array(Fcount())
+        ENDIF
+
+        SET FILTER TO ALLTRIM(E->TRG_TABLA)=ALLTRIM(A->TAB_NOMBRE)
+        GO TOP
+
+        WHILE !E->(EOF())
+
+           oTRIGGERS:=OpenTable("SELECT * FROM DPTRIGGERS WHERE TRG_NOMBRE"+GetWhere("=",E->TRG_NOMBRE),.T.)
+
+           // IF oTRIGGERS:RecCount()=0 
+
+           IIF(oTRIGGERS:RecCount()=0,oTRIGGERS:Append(),NIL)
+
+           E->(AEVAL(aFieldsE,{|a,n,nAt|oTRIGGERS:Replace(FieldName(n),FieldGet(n))}))
+           oTRIGGERS:Commit(IIF(oTRIGGERS:lAppend,"",oTRIGGERS:cWhere))
+
+           // ENDIF
+
+           oTRIGGERS:End()
+
+           E->(DBSKIP())
+
+       ENDDO
+
+//      USE
+
+        SELECT A
+
+      ENDIF
+
+      SKIP
+
+   ENDDO
+
+   A->(DBCLOSEAREA())
+   B->(DBCLOSEAREA())
+   C->(DBCLOSEAREA())
+   D->(DBCLOSEAREA())
+   E->(DBCLOSEAREA())
+
+   CursorWait()
+   oEditRun:oMeter:SetTotal(LEN(aTablas))
+   oEditRun:oWnd:SETTEXT("Actualizar Estructura")
+
+   EJECUTAR("SETNUMTAB")
+   LOADTABLAS(.T.) // Inicializa y Recarga  la lista de las tablas
+
+   IF !oDp:lConfig
+
+     FOR I=1 TO LEN(aTablas)
+        oEditRun:oSayRecord:SetText(aDescri[I])
+        CheckTable(aTablas[I],.F.)
+        oEditRun:oMeter:Set(I)
+     NEXT I
+
+   ENDIF
+
+   // En DPINI, Evalua este Valor en DPDATACNF si está vacio, genera STRUCT\ mediante el programa
+   // El programa DPCREASTRUCT   
+
+   EJECUTAR("DPCREASTRUCT",.F.)
+   
+   EJECUTAR("DPINDEXUNIQUE")
+
+// SQLUPDATE("DPDATACNF","DAT_NAME"+GetWhere("=","STRUCT"))
+
+   MsgInfo("Importación de Tablas"+CRLF+;
+           "Nuevos:"+ALLTRIM(STR(nAppend))+CRLF+;
+           "Actualizados:"+ALLTRIM(STR(nUpdate)),"Proceso Finalizado")
+
+   
+   EVAL(oEditRun:oBtnClose:bAction) // oEditRun:Close()
+
+   EJECUTAR("SETFIELDDEF")
+   EJECUTAR("GETFIELDZEROALL")
+
+RETURN .T.
+
+FUNCTION DICCDOWNLOAD()
+  LOCAL lResp,aFiles:={},cMemo:=""
+
+  AADD(aFiles,"DPTABLAS.DBF")
+  AADD(aFiles,"DPCAMPOS.DBF")
+  AADD(aFiles,"DPLINK.DBF")
+  AADD(aFiles,"DPCAMPOSOP.DBF")
+  AADD(aFiles,"DPTRIGGERS.DBF")
+  AADD(aFiles,"DPTRIGGERS.FPT")
+
+  AEVAL(aFiles,{|a,n| cMemo:=cMemo+IF(Empty(cMemo),"",CRLF)+a,FERASE("DATADBF\"+a)})
+
+  lResp:=EJECUTAR("DICDATDOWNLOAD",aFiles,NIL,"Diccionario de Datos",.F.)
+
+  IF !FILE("DATADBF\"+aFiles[1])
+     MsgMemo("Archivo DATADBF\"+aFiles[1],"Archivo no fué Descargado")
+  ELSE
+     MsgMemo("Archivos "+cMemo,"Descarga Exitosa")
+     oImpCon:ConImport(oImpCon)
+  ENDIF
+
+RETURN lResp
+
+// EOF
+
