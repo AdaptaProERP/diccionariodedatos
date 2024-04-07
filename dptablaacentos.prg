@@ -18,7 +18,11 @@ PROCE MAIN(cTable,cField,cKey)
 
   // cKey  :="TDC_TIPO"
 
-
+  IF Empty(oDp:aAcentos) 
+     EJECUTAR("ISTABLEACENTOS")
+     aData:=oDp:aAcentos
+  ENDIF
+/*
   AADD(aData,{"Ã³","ó"})
   AADD(aData,{"Ã­a","í"})
   AADD(aData,{"Ã©","é"})
@@ -29,7 +33,7 @@ PROCE MAIN(cTable,cField,cKey)
   AADD(aData,{"Ã"+CHR(226),"Ñ"})
   AADD(aData,{"Ã‘","Ñ"})
   AADD(aData,{"Ã‰","É"})
-
+*/
 
   FOR I=1 TO LEN(aData)
      cWhere:=cWhere+IF(Empty(cWhere),""," OR ")+cField+GetWhere("  LIKE ","%"+aData[I,1]+"%")
